@@ -1,0 +1,23 @@
+{
+  "name": "jy",
+  "description": "",
+  "version": "0.0.1",
+  "homepage": "http://github.com/recamshak/jy",
+  "engines": {
+    "node": ">= 0.4.0"
+  },
+  "author": "Joël Billaud <jbillaud@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/recamshak/jy"
+  },
+  "licenses": [
+    {
+      "type": "The MIT License",
+      "url": "http://www.opensource.org/licenses/mit-license.php"
+    }
+  ],
+  "dependencies": {
+    "q": "~1.0.0"
+  }
+}

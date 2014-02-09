@@ -1,22 +1,17 @@
 var moduleLevelDefsRe = /^(import|from|def|class|__all__|[_A-Za-z][_a-zA-Z0-9]*(?=\s*=)).*/gm,
     defRe = /^def\s+(\S*)\s*\(([^]*?)\)/m,
-    classRe = /^class\s+(\S*)\s*\(([^]*?)\)/m,
+    classRe = /^class\s+(\S*)\s*(?:\(([^]*?)\))?/m,
     allDictRe = /^__all__\s*=\s*[\[\(]([^]*?)[\]\)]/m;
 
-var fs = require('fs');
-var source = fs.readFileSync('quiz.py').toString();
 
 function parse(source) {
   var match,
       keyword,
-      declaration,
       symbols = [],
       allDict;
 
   while ((match = moduleLevelDefsRe.exec(source)) !== null) {
-    console.log(match);
     keyword = match[1];
-    declaration = match[0];
 
     switch (keyword) {
       case 'import': break;
@@ -33,6 +28,13 @@ function parse(source) {
       case '__all__':
         allDict = parse_allDict(source, match.index);
         break;
+
+      default:
+        symbols.push({
+          type: 'variable',
+          name: keyword,
+          index: match.index
+        });
     }
   }
 
@@ -60,13 +62,20 @@ function parse_def(source, index) {
 
 
 function parse_class(source, index) {
-  var match = classRe.exec(source.substr(index));
+  var match = classRe.exec(source.substr(index)),
+      subclasses;
+
+  if (match[2]) {
+    subcalsses = match[2].split(',').map(function (str) { return str.trim(); });
+  } else {
+    subcalsses = [];
+  }
 
   return {
     type: 'class',
     name: match[1],
     index: index,
-    superClasses: match[2].split(',').map(function (str) { return str.trim(); })
+    superClasses: subcalsses
   };
 }
 
@@ -77,4 +86,4 @@ function parse_allDict(source, index) {
 }
 
 
-console.log(parse(source));
+exports.parse = parse;

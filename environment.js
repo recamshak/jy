@@ -3,7 +3,8 @@ var sys = require('sys'),
     execFile = require('child_process').execFile,
     path = require('path'),
     Q = require('q'),
-    fs = require('fs');
+    fs = require('fs'),
+    pyModule = require('./module');
 
 /**
  * Initialize a new python `Environment` with the given `python`
@@ -15,6 +16,8 @@ var sys = require('sys'),
 function Environment(python, pythonpath) {
   this.python = python;
   this.pythonpath = pythonpath;
+  this.nbModules = 0;
+  this.nbSymbols = 0;
 }
 
 
@@ -45,7 +48,8 @@ Environment.prototype.registerBuiltinModules = function(python) {
     });
 };
 
-
+// TODO: this method generate a shitload of anonymous functions...
+//       maybe should try to optimize that a little bit
 Environment.prototype.registerPackage = function (packagePath, dottedpath) {
   console.log('registering package at', packagePath);
 
@@ -53,12 +57,7 @@ Environment.prototype.registerPackage = function (packagePath, dottedpath) {
 
   dottedpath = dottedpath || '';
 
-  fs.readdir(packagePath, function (err, files) {
-    if (err) {
-      console.log('error registering package at', packagePath, ':', err);
-      return;
-    }
-
+  return Q.nfcall(fs.readdir, packagePath).then(function (files) {
     if (dottedpath && files.indexOf('__init__.py') === -1) {
       console.log('skip package at', packagePath, ': no __init__.py');
       return;
@@ -71,34 +70,44 @@ Environment.prototype.registerPackage = function (packagePath, dottedpath) {
       return file.indexOf('.') === -1 || file.substr(-3) === '.py';
     });
 
+    return files
+      .map(function (file) {
+        return function() {
+          var filepath = path.join(packagePath, file);
 
-    files.forEach(function (file) {
-      var filepath = path.join(packagePath, file);
-      fs.stat(filepath, function (err, stats) {
-        if (err) {
-          console.warn('skip file', filepath, err);
-          return;
-        }
+          return Q.nfcall(fs.stat, filepath).then(function(stats) {
+            if (stats.isFile() && file.substr(-3) === '.py') {
+              return self.registerModuleFile(filepath, dottedpath + '.' + file.slice(0, -3));
+            } else if (stats.isDirectory()) {
+              return self.registerPackage(filepath, dottedpath + '.' + file);
+            }
+          })
+          .catch(function(err) {
+            console.warn('error while processing file', file, ':', err);
+          });
+        };
+      })
+      .reduce(Q.when, Q());
 
-        if (stats.isFile() && file.substr(-3) === '.py') {
-          self.registerModuleFile(filepath, dottedpath + '.' + file.slice(0, -3));
-        } else if (stats.isDirectory()) {
-          self.registerPackage(filepath, dottedpath + '.' + file);
-        }
-
-      });
-    });
+  })
+  .catch(function (err) {
+    console.warn('skipping package', packagePath, err);
   });
 };
 
 Environment.prototype.registerModuleFile = function(filepath, dottedpath) {
   console.log('registering module', dottedpath, 'at', filepath);
+  var self = this;
 
+  return Q.nfcall(fs.readFile, filepath).then(function(source) {
+    self.registerModule(filepath, dottedpath, pyModule.parse(source.toString()));
+  });
 };
 
 Environment.prototype.registerModule = function(filepath, dottedpath, symbols) {
   console.log('registering', symbols.length, 'smybols for module', dottedpath, 'from file', filepath);
-
+  this.nbModules++;
+  this.nbSymbols += symbols.length;
 };
 
 
@@ -114,7 +123,7 @@ Environment.prototype.buildEnvironmentIndex = function() {
       packagePaths = environmentPaths.concat(self.pythonpath);
     })
     .then(function () {
-      self.registerBuiltinModules(self.python);
+      return self.registerBuiltinModules(self.python);
     })
     .then(function () {
       return packagePaths
@@ -131,4 +140,11 @@ Environment.prototype.findDefinition = function(symbol) {
 
 exports.Environment = Environment;
 
-(new Environment('/usr/bin/python', [])).buildEnvironmentIndex();
+env = new Environment('/usr/bin/python', []);
+env.buildEnvironmentIndex().then(function() {
+  console.log('registered', env.nbSymbols, 'symboles from', env.nbModules, 'modules');
+})
+.catch(function(err) {
+  console.log(err);
+});
+

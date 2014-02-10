@@ -1,10 +1,8 @@
-var sys = require('sys'),
-    exec = require('child_process').exec,
-    execFile = require('child_process').execFile,
+var execFile = require('child_process').execFile,
     path = require('path'),
     Q = require('q'),
     fs = require('fs'),
-    pyModule = require('./module');
+    pyModule = require('./pyModule');
 
 /**
  * Initialize a new python `Environment` with the given `python`
@@ -18,6 +16,9 @@ function Environment(python, pythonpath) {
   this.pythonpath = pythonpath;
   this.nbModules = 0;
   this.nbSymbols = 0;
+
+  this.modules = {};
+  this.symbols = {};
 }
 
 
@@ -31,11 +32,11 @@ var getEnvironmentPaths = function(python) {
 };
 
 
-Environment.prototype.registerBuiltinModules = function(python) {
+Environment.prototype.registerBuiltinModules = function() {
   var self = this;
   var pyScript = path.join(__dirname, 'python', 'builtins.py');
 
-  return Q.nfcall(execFile, python, [pyScript])
+  return Q.nfcall(execFile, self.python, [pyScript])
     .then(function(output) {
       var modules = JSON.parse(output[0]),
           module;
@@ -54,8 +55,6 @@ Environment.prototype.registerPackage = function (packagePath, dottedpath) {
   console.log('registering package at', packagePath);
 
   var self = this;
-
-  dottedpath = dottedpath || '';
 
   return Q.nfcall(fs.readdir, packagePath).then(function (files) {
     if (dottedpath && files.indexOf('__init__.py') === -1) {
@@ -77,9 +76,13 @@ Environment.prototype.registerPackage = function (packagePath, dottedpath) {
 
           return Q.nfcall(fs.stat, filepath).then(function(stats) {
             if (stats.isFile() && file.substr(-3) === '.py') {
-              return self.registerModuleFile(filepath, dottedpath + '.' + file.slice(0, -3));
+              var moduleDottedpath = file === '__init__.py' ?
+                                     dottedpath :
+                                     (dottedpath ? dottedpath + '.' : '') + file.slice(0, -3);
+              return self.registerModuleFile(filepath, moduleDottedpath);
             } else if (stats.isDirectory()) {
-              return self.registerPackage(filepath, dottedpath + '.' + file);
+              var packageDottedpath = (dottedpath ? dottedpath + '.' : '') + file;
+              return self.registerPackage(filepath, packageDottedpath);
             }
           })
           .catch(function(err) {
@@ -105,9 +108,21 @@ Environment.prototype.registerModuleFile = function(filepath, dottedpath) {
 };
 
 Environment.prototype.registerModule = function(filepath, dottedpath, symbols) {
+  var self = this;
+
   console.log('registering', symbols.length, 'smybols for module', dottedpath, 'from file', filepath);
   this.nbModules++;
   this.nbSymbols += symbols.length;
+
+  this.modules[dottedpath] = symbols;
+
+  symbols.forEach(function (symbol) {
+    var list = self.symbols[symbol.name] || (self.symbols[symbol.name] = []);
+    list.push(symbol);
+
+    symbol.dottedpath = dottedpath;
+    symbol.filepath = filepath;
+  });
 };
 
 
@@ -123,7 +138,7 @@ Environment.prototype.buildEnvironmentIndex = function() {
       packagePaths = environmentPaths.concat(self.pythonpath);
     })
     .then(function () {
-      return self.registerBuiltinModules(self.python);
+      return self.registerBuiltinModules();
     })
     .then(function () {
       return packagePaths
@@ -140,7 +155,8 @@ Environment.prototype.findDefinition = function(symbol) {
 
 exports.Environment = Environment;
 
-env = new Environment('/usr/bin/python', []);
+/*
+var env = new Environment('/home/bibi/.virtualenvs/tmk/bin/python', []);
 env.buildEnvironmentIndex().then(function() {
   console.log('registered', env.nbSymbols, 'symboles from', env.nbModules, 'modules');
 })
@@ -148,3 +164,5 @@ env.buildEnvironmentIndex().then(function() {
   console.log(err);
 });
 
+
+exports.env = env;*/

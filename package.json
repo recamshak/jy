@@ -19,5 +19,8 @@
   ],
   "dependencies": {
     "q": "~1.0.0"
+  },
+  "devDependencies": {
+    "jasmine-node": "~1.13.1"
   }
 }
